@@ -19,6 +19,11 @@ def build_results_pdf(records: list[dict]) -> bytes:
         "Disclaimer", parent=styles["Normal"], textColor=colors.red, fontSize=12, spaceAfter=16
     )
     link_style = ParagraphStyle("Link", parent=styles["Normal"], textColor=colors.blue, underlineWidth=1)
+    geocode_warning_style = ParagraphStyle(
+        "GeocodeWarning", parent=styles["Normal"], textColor=colors.HexColor("#92660a"), spaceAfter=4
+    )
+
+    AREA_LEVEL_MATCH_TYPES = {"road", "suburb", "postcode", "city", None}
 
     story = [
         Paragraph("Solar Lead Pre-Qualifier — Results", styles["Title"]),
@@ -44,6 +49,15 @@ def build_results_pdf(records: list[dict]) -> bytes:
 
         if record.get("narrative"):
             story.append(Paragraph(record["narrative"], styles["Normal"]))
+        if record.get("low_confidence_geocode"):
+            if record.get("geocode_type") in AREA_LEVEL_MATCH_TYPES:
+                warning_text = (
+                    "<b>Warning:</b> approximate location only — the pin may show the wrong building. "
+                    "Verify the address manually before relying on this result."
+                )
+            else:
+                warning_text = "<b>Warning:</b> location approximate — please verify."
+            story.append(Paragraph(warning_text, geocode_warning_style))
         if record.get("google_maps_link"):
             story.append(Paragraph(
                 f'<link href="{record["google_maps_link"]}"><u>Verify on Google Maps</u></link>', link_style

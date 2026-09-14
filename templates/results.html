@@ -50,7 +50,16 @@
           <tbody>
             {% for record in records %}
             <tr>
-              <td>{{ record.address }}</td>
+              <td>
+                {{ record.address }}
+                {% if record.low_confidence_geocode %}
+                  {% if record.geocode_type in ("road", "suburb", "postcode", "city", None) %}
+                    <br><span class="badge badge-warning" title="Approximate location only — pin may show the wrong building. Verify the address manually before relying on this result.">&#9888; Approximate location — verify manually</span>
+                  {% else %}
+                    <br><span class="badge badge-warning" title="Location approximate — please verify.">&#9888; Location approximate — please verify</span>
+                  {% endif %}
+                {% endif %}
+              </td>
               <td>{{ record.pipeline_path }}</td>
               <td>
                 {% if record.tier == "HIGH" %}<span class="badge badge-high">High</span>

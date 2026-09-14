@@ -226,6 +226,7 @@ button:hover, .btn:hover {
 .badge-medium { background: var(--color-tier-medium-bg); color: var(--color-tier-medium-text); }
 .badge-low { background: var(--color-tier-low-bg); color: var(--color-tier-low-text); }
 .badge-new-build { background: #e6eefc; color: #2456ad; }
+.badge-warning { background: var(--color-tier-medium-bg); color: var(--color-tier-medium-text); white-space: normal; }
 
 .narrative {
   color: var(--color-text);

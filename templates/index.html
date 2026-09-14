@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Estimate solar viability for any worldwide address before contacting a lead.">
+  <meta name="theme-color" content="#1d5fd6">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='8' fill='%231d5fd6'/%3E%3Cg stroke='%231d5fd6' stroke-width='2.5' stroke-linecap='round'%3E%3Cline x1='16' y1='1' x2='16' y2='6'/%3E%3Cline x1='16' y1='26' x2='16' y2='31'/%3E%3Cline x1='1' y1='16' x2='6' y2='16'/%3E%3Cline x1='26' y1='16' x2='31' y2='16'/%3E%3Cline x1='5.5' y1='5.5' x2='9' y2='9'/%3E%3Cline x1='23' y1='23' x2='26.5' y2='26.5'/%3E%3Cline x1='5.5' y1='26.5' x2='9' y2='23'/%3E%3Cline x1='23' y1='9' x2='26.5' y2='5.5'/%3E%3C/g%3E%3C/svg%3E">
+  <title>Solar Lead Pre-Qualifier</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="page">
+    <div class="page-header">
+      <h1>Solar Lead Pre-Qualifier</h1>
+      <span class="tagline">Worldwide address solar-viability estimates</span>
+    </div>
+
+    <div class="disclaimer">
+      On-ground verification is required, and all estimates and recommendations must be reviewed
+      by a qualified solar engineer before being relied upon.
+    </div>
+
+    <div class="card">
+      <h2>Addresses</h2>
+      <p class="form-hint">
+        Add each property's address below (up to {{ max_form_rows }}). Check "Rebuild planned" if
+        the existing structure will be demolished for a new build.
+      </p>
+      <form method="post" action="/" id="addresses-form">
+        <div id="address-list"></div>
+        <div class="actions-row" style="margin-top: 16px;">
+          <button type="button" id="add-address-btn" class="btn btn-secondary">+ Add another address</button>
+        </div>
+        <div class="actions-row" style="margin-bottom: 0;">
+          <button type="submit" id="submit-btn">Get estimates</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="loading-overlay" id="loading-overlay" role="status" aria-live="assertive" hidden>
+    <div class="loading-box">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="loading-title">Fetching solar estimates&hellip;</p>
+      <p class="loading-hint">
+        This can take a minute or more per address, especially the first lookup in a new area.
+        Please keep this tab open.
+      </p>
+    </div>
+  </div>
+
+  <datalist id="country-list">
+    {% for country in countries %}
+    <option value="{{ country }}">
+    {% endfor %}
+  </datalist>
+
+  <script>
+    window.MAX_FORM_ROWS = {{ max_form_rows }};
+  </script>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

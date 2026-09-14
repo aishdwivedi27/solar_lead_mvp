@@ -1,0 +1,18 @@
+fastapi==0.141.1
+uvicorn==0.52.4
+jinja2==3.1.6
+httpx==0.28.1
+python-dotenv==1.2.3
+rasterio==1.5.1
+pysolar==0.13
+python-multipart==0.0.32
+anthropic==1.5.0
+google-genai>=1.0.0
+
+# PDF export: reportlab over weasyprint. WeasyPrint needs system-level
+# libraries (Pango, Cairo, GDK-Pixbuf) that complicate Windows dev setup and
+# Render's free-tier build step; reportlab installs from a pure pip wheel
+# with no OS-level dependency.
+reportlab==5.0.1
+
+pytest==9.1.1

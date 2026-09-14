@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets -- never commit real API keys
+.env
+
+# Downloaded canopy-height tiles (large binaries, safe to re-fetch)
+canopy_tile_cache/

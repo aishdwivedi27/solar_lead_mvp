@@ -15,7 +15,7 @@ API from the same process -- see `solar-lead-mvp-blueprint.md` in the repo root 
 | `config.py` | Environment variables and app-wide constants |
 | `models.py` | Pydantic request models |
 | `countries.py` | Country list for the address form |
-| `geocoding.py` | Nominatim structured (worldwide) geocoding |
+| `geocoding.py` | Nominatim structured (worldwide) geocoding, with an OpenCage rooftop-level fallback |
 | `osm.py` | Overpass building-footprint existence and adjacency checks |
 | `pvgis.py` | PVGIS tilt/azimuth and regional irradiance |
 | `ndvi.py` | Copernicus auth and Sentinel-2 NDVI |
@@ -46,6 +46,8 @@ Fill in `.env`:
 | `GEMINI_API_KEY` | Optional | LLM narrative via Gemini (has a free tier). Used only when `ANTHROPIC_API_KEY` is unset -- this is what a Render deployment should rely on. |
 | `GEMINI_MODEL` | Optional | Gemini model id. Defaults to `gemini-3.6-flash`. |
 | `NOMINATIM_CONTACT_EMAIL` | Recommended | Nominatim's usage policy asks for a real contact point in the User-Agent header. |
+| `OPENCAGE_API_KEY` | Optional | Rooftop-level geocoding fallback for addresses Nominatim only resolves to a road. Free trial signup needs no credit card. Without it, the app is Nominatim-only, same as before. |
+| `OPENCAGE_DAILY_REQUEST_LIMIT` | Optional | Caps this app's own OpenCage usage per day. Defaults to `1500`, comfortably under OpenCage's free-trial cap of 2,500/day. |
 
 None of these are required to run the app -- every external dependency degrades gracefully and is
 flagged on the record rather than failing the request. If neither `ANTHROPIC_API_KEY` nor
@@ -61,6 +63,25 @@ environments:
   unset in the environment -> Gemini's free tier is used instead.
 - To test the Gemini path locally, comment out `ANTHROPIC_API_KEY` in `.env` while leaving
   `GEMINI_API_KEY` set -- the app falls through to Gemini exactly as it would on Render.
+
+### Geocoding: Nominatim first, OpenCage as a metered fallback
+
+Nominatim (OpenStreetMap data) is always tried first and is free with no key. When it only
+resolves an address to a road or area -- because the building itself isn't mapped in OSM -- and
+`OPENCAGE_API_KEY` is set, `geocoding.py` retries the address against the OpenCage Geocoding API,
+which blends OSM with other open address datasets and isn't limited by the same OSM gaps. The
+Nominatim result is kept whenever OpenCage doesn't do any better.
+
+Because OpenCage's free trial is capped and rate-limited, the fallback is metered on three fronts:
+
+- **On-disk cache** (`opencage_geocode_cache.json`) -- a given address is never re-requested.
+- **On-disk daily counter** (`opencage_daily_usage.json`) -- requests stop once
+  `OPENCAGE_DAILY_REQUEST_LIMIT` is hit for the day, regardless of lead volume.
+- **Per-call pacing** -- a request is never sent less than one second after the previous one, per
+  OpenCage's 1-request/second free-trial limit.
+
+All three are guarded by a single process-local lock, which is sufficient because the app runs as
+one FastAPI/uvicorn process with no multi-worker access to the same files.
 
 ## Run
 

@@ -32,4 +32,13 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 NOMINATIM_CONTACT = os.environ.get("NOMINATIM_CONTACT_EMAIL", "contact not set")
 NOMINATIM_USER_AGENT = f"solar_lead_mvp/0.1 ({NOMINATIM_CONTACT})"
 
+# OpenCage Geocoding API: rooftop-level fallback used when Nominatim
+# (OpenStreetMap data) only resolves an address to a road. Optional -- the
+# fallback is skipped when unset, matching Nominatim-only behavior. Free
+# trial signup (https://opencagedata.com) needs no credit card; its own cap
+# is 2,500 requests/day, so OPENCAGE_DAILY_REQUEST_LIMIT defaults well under
+# that.
+OPENCAGE_API_KEY = os.environ.get("OPENCAGE_API_KEY", "").strip()
+OPENCAGE_DAILY_REQUEST_LIMIT = int(os.environ.get("OPENCAGE_DAILY_REQUEST_LIMIT", "1500"))
+
 MAX_FORM_ROWS = 20

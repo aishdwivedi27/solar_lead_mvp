@@ -9,5 +9,9 @@ __pycache__/
 # Downloaded canopy-height tiles (large binaries, safe to re-fetch)
 canopy_tile_cache/
 
+# OpenCage geocode result cache and daily-request counter -- local runtime state
+opencage_geocode_cache.json
+opencage_daily_usage.json
+
 # Ralph-loop local task state -- not project code
 .claude/*.local.md

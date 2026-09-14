@@ -1,4 +1,16 @@
+import pytest
+
+import geocoding
 from geocoding import geocode_address
+
+
+@pytest.fixture(autouse=True)
+def _disable_opencage_fallback_by_default(monkeypatch):
+    """Tests must not depend on whether the developer's local .env has a real OPENCAGE_API_KEY.
+
+    Tests that want to exercise the fallback opt back in via _configure_opencage.
+    """
+    monkeypatch.setattr(geocoding, "OPENCAGE_API_KEY", "")
 
 
 class _FakeResponse:
@@ -107,3 +119,62 @@ def test_no_retry_when_no_postal_code_supplied():
 
     assert result["geocode_type"] == "road"
     assert len(client.calls) == 1
+
+
+def _opencage_building_response(lat=7.0, lon=8.0):
+    return {"results": [{"components": {"_type": "building"}, "geometry": {"lat": lat, "lng": lon}, "confidence": 9}]}
+
+
+def _configure_opencage(monkeypatch, tmp_path, daily_limit=10):
+    monkeypatch.setattr(geocoding, "OPENCAGE_API_KEY", "test-key")
+    monkeypatch.setattr(geocoding, "OPENCAGE_CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr(geocoding, "OPENCAGE_USAGE_PATH", tmp_path / "usage.json")
+    monkeypatch.setattr(geocoding, "OPENCAGE_DAILY_REQUEST_LIMIT", daily_limit)
+    monkeypatch.setattr(geocoding, "OPENCAGE_MIN_DELAY_SECONDS", 0)  # don't slow tests down
+
+
+def test_opencage_fallback_used_when_nominatim_only_finds_road(monkeypatch, tmp_path):
+    _configure_opencage(monkeypatch, tmp_path)
+    client = _FakeClient([[_road_result()], [_road_result()], _opencage_building_response()])
+
+    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+
+    assert result["geocode_type"] == "opencage:building"
+    assert result["latitude"] == 7.0
+    assert result["low_confidence_geocode"] is False
+    assert len(client.calls) == 3
+
+
+def test_opencage_result_is_cached_and_not_requested_twice(monkeypatch, tmp_path):
+    _configure_opencage(monkeypatch, tmp_path)
+    first_client = _FakeClient([[_road_result()], [_road_result()], _opencage_building_response()])
+    geocode_address(first_client, "4 Berrin Road", postal_code="5162")
+
+    second_client = _FakeClient([[_road_result()], [_road_result()]])
+    result = geocode_address(second_client, "4 Berrin Road", postal_code="5162")
+
+    assert result["geocode_type"] == "opencage:building"
+    assert len(second_client.calls) == 2  # served from cache -- no OpenCage request made
+
+
+def test_opencage_fallback_skipped_once_daily_limit_reached(monkeypatch, tmp_path):
+    _configure_opencage(monkeypatch, tmp_path, daily_limit=0)
+    client = _FakeClient([[_road_result()], [_road_result()]])
+
+    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+
+    assert result["geocode_type"] == "road"
+    assert result["low_confidence_geocode"] is True
+    assert len(client.calls) == 2  # no OpenCage request -- daily cap already spent
+
+
+def test_no_opencage_fallback_when_api_key_unset(monkeypatch, tmp_path):
+    monkeypatch.setattr(geocoding, "OPENCAGE_API_KEY", "")
+    monkeypatch.setattr(geocoding, "OPENCAGE_CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr(geocoding, "OPENCAGE_USAGE_PATH", tmp_path / "usage.json")
+    client = _FakeClient([[_road_result()], [_road_result()]])
+
+    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+
+    assert result["geocode_type"] == "road"
+    assert len(client.calls) == 2

@@ -17,3 +17,7 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.6-flash
+      - key: OPENCAGE_API_KEY
+        sync: false
+      - key: OPENCAGE_DAILY_REQUEST_LIMIT
+        value: "1500"

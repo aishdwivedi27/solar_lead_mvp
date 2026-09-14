@@ -6,6 +6,14 @@ ETH Global Canopy Height) plus an LLM-generated narrative. Serves both the HTML 
 API from the same process -- see `solar-lead-mvp-blueprint.md` in the repo root for the full
 15-stage pipeline design.
 
+## What all data it uses
+
+PVGIS → baseline sunlight/irradiance for the area (and the ideal panel angle for new builds)
+Sentinel-2 (ESA satellite) → greenery check via NDVI
+NASA (GEDI laser data, processed by ETH Zurich into the canopy-height map) → actual tree height, used for the shading calculation
+OpenStreetMap → does the address-to-coordinates step (via Nominatim, which is built on OSM data) and separately checks whether a building footprint actually exists there / how close the neighbors are — two different uses of the same underlying map data
+OpenCage → the fallback geocoder you just added, for when Nominatim can't resolve an address precisely — it's a separate commercial service, not OSM itself, so technically that address step now has two possible sources, not just OpenStreetMap alone
+
 ## Module map
 
 `app.py` only wires up FastAPI routes; the pipeline logic is split across:

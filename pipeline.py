@@ -85,7 +85,9 @@ def submit_addresses(entries: list[dict]) -> list[dict]:
                 nominatim_rate_limit_pause()
 
             if record["latitude"] is not None and record["longitude"] is not None:
-                record.update(check_building_footprint(client, record["latitude"], record["longitude"]))
+                record.update(check_building_footprint(
+                    client, record["latitude"], record["longitude"], record.get("geocode_type")
+                ))
             else:
                 record.update({
                     "has_building_footprint": None,

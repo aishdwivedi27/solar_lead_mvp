@@ -6,6 +6,13 @@ import time
 import httpx
 
 from config import logger
+from geocoding import ROOFTOP_MATCH_TYPES
+
+# geocode_type values that mean a geocoder already independently confirmed
+# this address is a building: Nominatim's own rooftop match types, plus
+# OpenCage's equivalent classification from its fallback (stage 4). Used
+# only when Overpass itself is unavailable, below.
+ROOFTOP_GEOCODE_TYPES = ROOFTOP_MATCH_TYPES | {"opencage:building"}
 
 # Existence checks only care about a building within this distance of the
 # address point; adjacency needs to see past that same building out to
@@ -50,7 +57,10 @@ def _parse_retry_after(value: str | None) -> float:
     return max(0.0, min(seconds, MAX_RETRY_AFTER_S))
 
 
-def _overpass_buildings_near(client: httpx.Client, lat: float, lon: float, radius_m: int) -> list[dict]:
+def _overpass_buildings_near(client: httpx.Client, lat: float, lon: float, radius_m: int) -> list[dict] | None:
+    """Returns matched elements, or None if every endpoint was unavailable --
+    kept distinct from an empty list (a query that succeeded and found
+    nothing) so callers can fall back instead of reporting a false negative."""
     cache_key = (round(lat, 6), round(lon, 6), radius_m)
     cached = _overpass_cache.get(cache_key)
     if cached is not None:
@@ -89,7 +99,7 @@ def _overpass_buildings_near(client: httpx.Client, lat: float, lon: float, radiu
             logger.warning("Overpass query failed for (%s, %s) via %s: %s", lat, lon, endpoint, exc)
             last_exc = exc
     logger.warning("All Overpass endpoints unavailable for (%s, %s): %s", lat, lon, last_exc)
-    return []
+    return None
 
 
 def _extract_footprint_polygon(element: dict) -> list[list[float]]:
@@ -102,11 +112,38 @@ def _extract_footprint_polygon(element: dict) -> list[list[float]]:
     return polygon
 
 
-def check_building_footprint(client: httpx.Client, lat: float, lon: float, radius_m: int = EXISTENCE_CHECK_RADIUS_M) -> dict:
+def check_building_footprint(
+    client: httpx.Client,
+    lat: float,
+    lon: float,
+    geocode_type: str | None = None,
+    radius_m: int = EXISTENCE_CHECK_RADIUS_M,
+) -> dict:
     # Fetched at the adjacency radius (wider) so this shares its cached
     # Overpass response with get_nearest_building_distance_m below instead of
     # firing a second query for the same point.
     elements = _overpass_buildings_near(client, lat, lon, ADJACENCY_SEARCH_RADIUS_M)
+
+    if elements is None:
+        # Overpass itself is unavailable -- fall back to the geocoder's own
+        # rooftop-level classification (Nominatim's "house"/"building" match,
+        # or OpenCage's equivalent from its stage-4 fallback) rather than
+        # reporting a false "no building here". It has no footprint
+        # geometry, so adjacency still can't be checked, but it's a real
+        # independent confirmation the address is a building.
+        if geocode_type in ROOFTOP_GEOCODE_TYPES:
+            return {
+                "has_building_footprint": True,
+                "building_footprint": None,
+                "building_osm_ref": None,
+                "ambiguous_existence": False,
+            }
+        return {
+            "has_building_footprint": False,
+            "building_footprint": None,
+            "building_osm_ref": None,
+            "ambiguous_existence": True,
+        }
 
     own_element = None
     for element in elements:
@@ -184,6 +221,8 @@ def get_nearest_building_distance_m(
     radius_m: int = ADJACENCY_SEARCH_RADIUS_M,
 ) -> float | None:
     elements = _overpass_buildings_near(client, lat, lon, radius_m)
+    if elements is None:
+        return None
     own_points = own_footprint if own_footprint else [[lat, lon]]
 
     nearest = None

@@ -399,6 +399,11 @@ button:disabled {
   flex-shrink: 0;
 }
 
+th .info-icon {
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
 @media (max-width: 640px) {
   .page {
     padding: 20px 14px 48px;

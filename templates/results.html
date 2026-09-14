@@ -31,10 +31,18 @@
           <thead>
             <tr>
               <th>Address</th>
-              <th>Path</th>
-              <th>Tier / Recommendation</th>
-              <th>Regional irradiance</th>
-              <th>Shaded hours/yr</th>
+              <th>Path
+                <span class="info-icon" tabindex="0" title="Which analysis this address was scored on. EXISTING_ROOF: an existing structure was found, so the roof itself is checked for solar feasibility. NEW_BUILD: no footprint was found (or a demolition/rebuild is planned), so the site is scored for optimal panel orientation instead of an actual roof.">i</span>
+              </th>
+              <th>Tier / Recommendation
+                <span class="info-icon" tabindex="0" title="For EXISTING_ROOF addresses: HIGH/MEDIUM/LOW rank leads by regional irradiance, after any address with 1,000+ shaded hours/yr is dropped straight to LOW. For NEW_BUILD addresses there is no tier — instead you get a recommended tilt and azimuth for panel placement.">i</span>
+              </th>
+              <th>Regional irradiance
+                <span class="info-icon" tabindex="0" title="Average daily solar energy reaching an optimally-angled surface at this location, in kWh/m²/day (PVGIS data). Higher is better: this is the main driver of the HIGH/MEDIUM/LOW tier — HIGH is ≥4.5, MEDIUM is ≥3.8, below that is LOW.">i</span>
+              </th>
+              <th>Shaded hours/yr
+                <span class="info-icon" tabindex="0" title="Estimated hours per year the roof is blocked from direct sun by nearby trees or structures, based on canopy height data. This matters because 1,000+ shaded hours/yr overrides irradiance and forces a LOW tier regardless of how sunny the region is.">i</span>
+              </th>
               <th>Narrative</th>
               <th>Verify</th>
             </tr>

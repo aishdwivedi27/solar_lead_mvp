@@ -1,19 +1,61 @@
 """OpenStreetMap Overpass lookups: building-footprint existence and adjacency."""
 
 import math
+import time
 
 import httpx
 
 from config import logger
 
-# Adjacency search radius must be wider than the existence-check radius below
-# -- it needs to see past the record's own building to any neighbours -- but
-# the threshold below is what actually decides the flag.
+# Existence checks only care about a building within this distance of the
+# address point; adjacency needs to see past that same building out to
+# neighbours, hence the wider radius below. Both are fetched from the *same*
+# Overpass query (see _overpass_buildings_near's cache) -- the existence
+# check just filters the wider result set down to this distance -- so one
+# HTTP round trip per address covers both instead of two.
+EXISTENCE_CHECK_RADIUS_M = 20
 ADJACENCY_SEARCH_RADIUS_M = 30
 ADJACENCY_DEFAULT_THRESHOLD_M = 5
 
+# Two independent public Overpass instances. overpass-api.de rate-limits and
+# occasionally times out shared cloud IPs (e.g. Render's), which previously
+# made a request-failure indistinguishable from a genuine "no building here"
+# result and flipped the pipeline path depending on which host happened to
+# run it. Falling back to a second mirror keeps the result consistent across
+# environments so the verification link a tester opens matches what the
+# report said.
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+]
+
+DEFAULT_RETRY_AFTER_S = 30.0
+MAX_RETRY_AFTER_S = 300.0
+
+# Process-lifetime only -- cleared on restart/redeploy, which is fine: it
+# exists to stop a burst of addresses in one run from re-querying the same
+# spot or re-hammering an endpoint that just rate-limited us, not to persist
+# across deploys.
+_overpass_cache: dict[tuple[float, float, int], list[dict]] = {}
+_endpoint_cooldown_until: dict[str, float] = {}
+
+
+def _parse_retry_after(value: str | None) -> float:
+    if value is None:
+        return DEFAULT_RETRY_AFTER_S
+    try:
+        seconds = float(value)
+    except ValueError:
+        return DEFAULT_RETRY_AFTER_S
+    return max(0.0, min(seconds, MAX_RETRY_AFTER_S))
+
 
 def _overpass_buildings_near(client: httpx.Client, lat: float, lon: float, radius_m: int) -> list[dict]:
+    cache_key = (round(lat, 6), round(lon, 6), radius_m)
+    cached = _overpass_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     query = f"""
     [out:json][timeout:25];
     (
@@ -22,16 +64,32 @@ def _overpass_buildings_near(client: httpx.Client, lat: float, lon: float, radiu
     );
     out geom;
     """
-    try:
-        response = client.post(
-            "https://overpass-api.de/api/interpreter",
-            data={"data": query},
-        )
-        response.raise_for_status()
-        return response.json().get("elements", [])
-    except httpx.HTTPError as exc:
-        logger.warning("Overpass query failed for (%s, %s): %s", lat, lon, exc)
-        return []
+    last_exc = None
+    for endpoint in OVERPASS_ENDPOINTS:
+        now = time.monotonic()
+        cooldown_until = _endpoint_cooldown_until.get(endpoint, 0.0)
+        if now < cooldown_until:
+            logger.info("Skipping Overpass endpoint %s, in cooldown for %.0fs more", endpoint, cooldown_until - now)
+            continue
+        try:
+            response = client.post(endpoint, data={"data": query})
+            if response.status_code == 429:
+                retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+                _endpoint_cooldown_until[endpoint] = time.monotonic() + retry_after
+                logger.warning(
+                    "Overpass endpoint %s rate-limited us for (%s, %s); backing off %.0fs",
+                    endpoint, lat, lon, retry_after,
+                )
+                continue
+            response.raise_for_status()
+            elements = response.json().get("elements", [])
+            _overpass_cache[cache_key] = elements
+            return elements
+        except httpx.HTTPError as exc:
+            logger.warning("Overpass query failed for (%s, %s) via %s: %s", lat, lon, endpoint, exc)
+            last_exc = exc
+    logger.warning("All Overpass endpoints unavailable for (%s, %s): %s", lat, lon, last_exc)
+    return []
 
 
 def _extract_footprint_polygon(element: dict) -> list[list[float]]:
@@ -44,10 +102,20 @@ def _extract_footprint_polygon(element: dict) -> list[list[float]]:
     return polygon
 
 
-def check_building_footprint(client: httpx.Client, lat: float, lon: float, radius_m: int = 20) -> dict:
-    elements = _overpass_buildings_near(client, lat, lon, radius_m)
+def check_building_footprint(client: httpx.Client, lat: float, lon: float, radius_m: int = EXISTENCE_CHECK_RADIUS_M) -> dict:
+    # Fetched at the adjacency radius (wider) so this shares its cached
+    # Overpass response with get_nearest_building_distance_m below instead of
+    # firing a second query for the same point.
+    elements = _overpass_buildings_near(client, lat, lon, ADJACENCY_SEARCH_RADIUS_M)
 
-    if not elements:
+    own_element = None
+    for element in elements:
+        footprint = _extract_footprint_polygon(element)
+        if footprint and _min_distance_m([[lat, lon]], footprint) <= radius_m:
+            own_element = element
+            break
+
+    if own_element is None:
         return {
             "has_building_footprint": False,
             "building_footprint": None,
@@ -55,11 +123,10 @@ def check_building_footprint(client: httpx.Client, lat: float, lon: float, radiu
             "ambiguous_existence": True,
         }
 
-    element = elements[0]
     return {
         "has_building_footprint": True,
-        "building_footprint": _extract_footprint_polygon(element),
-        "building_osm_ref": f"{element.get('type')}/{element.get('id')}",
+        "building_footprint": _extract_footprint_polygon(own_element),
+        "building_osm_ref": f"{own_element.get('type')}/{own_element.get('id')}",
         "ambiguous_existence": False,
     }
 

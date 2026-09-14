@@ -8,3 +8,6 @@ __pycache__/
 
 # Downloaded canopy-height tiles (large binaries, safe to re-fetch)
 canopy_tile_cache/
+
+# Ralph-loop local task state -- not project code
+.claude/*.local.md

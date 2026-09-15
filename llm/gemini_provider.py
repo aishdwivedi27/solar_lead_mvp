@@ -1,7 +1,7 @@
 """Google Gemini narrative provider (Render deployment default -- has a free tier)."""
 
 from config import logger
-from llm.base import NarrativeProvider
+from llm.base import NarrativeGenerationError, NarrativeProvider
 
 
 class GeminiNarrativeProvider(NarrativeProvider):
@@ -12,7 +12,7 @@ class GeminiNarrativeProvider(NarrativeProvider):
         self._model = model
         self._max_tokens = max_tokens
 
-    def generate(self, system_prompt: str, user_content: str) -> str | None:
+    def generate(self, system_prompt: str, user_content: str) -> str:
         from google.genai import types
 
         try:
@@ -30,7 +30,10 @@ class GeminiNarrativeProvider(NarrativeProvider):
                 ),
             )
             text = (response.text or "").strip()
-            return text or None
         except Exception as exc:  # google-genai's error taxonomy isn't narrow enough to enumerate here
             logger.warning("Gemini narrative generation failed: %s", exc)
-            return None
+            raise NarrativeGenerationError(f"Gemini API error: {exc}") from exc
+
+        if not text:
+            raise NarrativeGenerationError("Gemini returned an empty response")
+        return text

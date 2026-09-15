@@ -3,8 +3,10 @@ confidence flags -- never a coordinate, address, or API of its own -- and is ins
 phrase those values, not add to them. This keeps the score the actual decision-maker; the
 narrative is presentation only."""
 
-from llm.base import NarrativeProvider
+from llm.base import NarrativeGenerationError, NarrativeProvider
 from scoring import ScoreResult
+
+NO_PROVIDER_REASON = "No narrative provider configured -- set ANTHROPIC_API_KEY or GEMINI_API_KEY."
 
 NARRATIVE_SYSTEM_PROMPT = """You write a short pros/cons paragraph for one address in a solar \
 lead-qualification report, for a salesperson to read before contacting the lead.
@@ -44,7 +46,14 @@ def _narrative_input_summary(record: dict, score_result: ScoreResult) -> str:
 
 def generate_narrative(
     provider: NarrativeProvider | None, record: dict, score_result: ScoreResult
-) -> str | None:
+) -> tuple[str | None, str | None]:
+    """Returns (narrative, unavailable_reason) -- exactly one of the two is set. Failure is
+    never silent: whichever provider is active, or the lack of one, is reported back so a
+    hosted deployment's missing/broken key shows up in the UI/PDF, not only in server logs."""
     if provider is None:
-        return None
-    return provider.generate(NARRATIVE_SYSTEM_PROMPT, _narrative_input_summary(record, score_result))
+        return None, NO_PROVIDER_REASON
+    try:
+        text = provider.generate(NARRATIVE_SYSTEM_PROMPT, _narrative_input_summary(record, score_result))
+    except NarrativeGenerationError as exc:
+        return None, str(exc)
+    return text, None

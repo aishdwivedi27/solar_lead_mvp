@@ -18,9 +18,9 @@ from starlette.concurrency import run_in_threadpool
 
 from config import MAX_FORM_ROWS
 from countries import COUNTRIES
-from models import AddressesIn
+from models import AddressesIn, RecordCorrection
 from pdf import build_results_pdf
-from pipeline import ADDRESS_RECORDS, submit_addresses
+from pipeline import ADDRESS_RECORDS, recompute_record, submit_addresses
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -64,6 +64,13 @@ async def submit_form(request: Request):
 def submit_json(payload: AddressesIn):
     entries = [e.model_dump() for e in payload.addresses]
     return submit_addresses(entries)
+
+
+@app.post("/api/addresses/{record_id}/recompute")
+async def recompute(record_id: str, corrections: RecordCorrection):
+    if record_id not in ADDRESS_RECORDS:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return await run_in_threadpool(recompute_record, record_id, corrections.model_dump())
 
 
 @app.get("/download-pdf")

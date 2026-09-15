@@ -45,11 +45,13 @@
               </th>
               <th>Narrative</th>
               <th>Verify</th>
+              <th>Confidence</th>
             </tr>
           </thead>
           <tbody>
             {% for record in records %}
-            <tr>
+            {% set needs_verification = record.verify_adjacent_structure or record.ambiguous_existence or record.low_confidence_geocode %}
+            <tr class="record-row" data-record-id="{{ record.id }}">
               <td>
                 {{ record.address }}
                 {% if record.low_confidence_geocode %}
@@ -60,8 +62,8 @@
                   {% endif %}
                 {% endif %}
               </td>
-              <td>{{ record.pipeline_path }}</td>
-              <td>
+              <td class="cell-path">{{ record.pipeline_path }}</td>
+              <td class="cell-tier">
                 {% if record.tier == "HIGH" %}<span class="badge badge-high">High</span>
                 {% elif record.tier == "MEDIUM" %}<span class="badge badge-medium">Medium</span>
                 {% elif record.tier == "LOW" %}<span class="badge badge-low">Low</span>
@@ -71,16 +73,77 @@
                 {% else %}<span class="muted">&mdash;</span>
                 {% endif %}
               </td>
-              <td>{{ record.regional_irradiance if record.regional_irradiance is not none else "—" }}</td>
-              <td>{{ "%.0f"|format(record.estimated_shaded_hours) if record.estimated_shaded_hours is not none else "—" }}</td>
-              <td class="narrative">{{ record.narrative if record.narrative else "—" }}</td>
+              <td class="cell-irradiance">{{ record.regional_irradiance if record.regional_irradiance is not none else "—" }}</td>
+              <td class="cell-shaded">{{ "%.0f"|format(record.estimated_shaded_hours) if record.estimated_shaded_hours is not none else "—" }}</td>
+              <td class="narrative cell-narrative">
+                {% if record.narrative %}{{ record.narrative }}
+                {% else %}<span class="muted" title="{{ record.narrative_unavailable_reason }}">Narrative unavailable &mdash; {{ record.narrative_unavailable_reason }}</span>
+                {% endif %}
+              </td>
               <td>
-                <div class="link-list">
+                <div class="link-list cell-links">
                   {% if record.google_maps_link %}<a href="{{ record.google_maps_link }}" target="_blank" rel="noopener">Google Maps</a>{% endif %}
                   {% if record.street_view_link %}<a href="{{ record.street_view_link }}" target="_blank" rel="noopener">Street View</a>{% endif %}
                 </div>
               </td>
+              <td>
+                <span class="badge cell-confidence {{ 'badge-verified' if record.confidence == 'verified' else 'badge-estimated' }}">
+                  {{ "Verified" if record.confidence == "verified" else "Estimated" }}
+                </span>
+                {% if needs_verification %}
+                  <br><button type="button" class="btn-edit" data-toggle-edit="{{ record.id }}">Edit &amp; recompute</button>
+                {% endif %}
+              </td>
             </tr>
+            {% if needs_verification %}
+            <tr class="edit-row" id="edit-row-{{ record.id }}" hidden>
+              <td colspan="8">
+                <form class="edit-form" data-record-id="{{ record.id }}">
+                  <p class="form-hint">
+                    Correct only what you verified on-site or via the links above, then recompute —
+                    everything else about this address stays as automatically estimated.
+                  </p>
+                  <div class="edit-fields">
+                    {% if record.ambiguous_existence %}
+                    <label class="field">
+                      <span class="field-label">Building exists on site?</span>
+                      <select name="confirmed_building_exists">
+                        <option value="">Not verified</option>
+                        <option value="true">Yes, confirmed</option>
+                        <option value="false">No, vacant land</option>
+                      </select>
+                    </label>
+                    {% endif %}
+                    {% if record.verify_adjacent_structure %}
+                    <label class="field">
+                      <span class="field-label">Adjacent structure shades this roof?</span>
+                      <select name="confirmed_adjacent_structure">
+                        <option value="">Not verified</option>
+                        <option value="true">Yes, confirmed</option>
+                        <option value="false">No, not a concern</option>
+                      </select>
+                    </label>
+                    {% endif %}
+                    {% if record.low_confidence_geocode %}
+                    <label class="field field-checkbox">
+                      <input type="checkbox" name="confirmed_geocode_accurate" value="true">
+                      <span>Pin location confirmed accurate</span>
+                    </label>
+                    {% endif %}
+                    <label class="field">
+                      <span class="field-label">Corrected tree/canopy height (m)</span>
+                      <input type="number" name="corrected_canopy_height_m" step="0.1" min="0" placeholder="e.g. 6.5">
+                    </label>
+                  </div>
+                  <div class="actions-row edit-actions">
+                    <button type="submit" class="btn">Save &amp; recompute</button>
+                    <button type="button" class="btn btn-secondary" data-cancel-edit="{{ record.id }}">Cancel</button>
+                    <span class="edit-status muted" aria-live="polite"></span>
+                  </div>
+                </form>
+              </td>
+            </tr>
+            {% endif %}
             {% endfor %}
           </tbody>
         </table>
@@ -116,6 +179,8 @@
               <th>Canopy height unavailable?</th>
               <th>Estimated shaded hours/year</th>
               <th>Narrative</th>
+              <th>Narrative unavailable reason</th>
+              <th>Confidence</th>
             </tr>
           </thead>
           <tbody>
@@ -144,6 +209,8 @@
               <td>{{ record.canopy_height_unavailable }}</td>
               <td>{{ record.estimated_shaded_hours }}</td>
               <td>{{ record.narrative }}</td>
+              <td>{{ record.narrative_unavailable_reason }}</td>
+              <td>{{ record.confidence }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -151,5 +218,7 @@
       </div>
     </details>
   </div>
+
+  <script src="/static/results.js"></script>
 </body>
 </html>

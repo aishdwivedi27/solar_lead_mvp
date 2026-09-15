@@ -5,7 +5,7 @@ import ssl
 import anthropic
 
 from config import logger
-from llm.base import NarrativeProvider
+from llm.base import NarrativeGenerationError, NarrativeProvider
 
 
 class AnthropicNarrativeProvider(NarrativeProvider):
@@ -20,7 +20,7 @@ class AnthropicNarrativeProvider(NarrativeProvider):
         self._model = model
         self._max_tokens = max_tokens
 
-    def generate(self, system_prompt: str, user_content: str) -> str | None:
+    def generate(self, system_prompt: str, user_content: str) -> str:
         try:
             response = self._client.messages.create(
                 model=self._model,
@@ -30,7 +30,10 @@ class AnthropicNarrativeProvider(NarrativeProvider):
                 messages=[{"role": "user", "content": user_content}],
             )
             text = "".join(block.text for block in response.content if block.type == "text").strip()
-            return text or None
         except anthropic.APIError as exc:
             logger.warning("Anthropic narrative generation failed: %s", exc)
-            return None
+            raise NarrativeGenerationError(f"Anthropic API error: {exc}") from exc
+
+        if not text:
+            raise NarrativeGenerationError("Anthropic returned an empty response")
+        return text

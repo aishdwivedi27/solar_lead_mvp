@@ -227,6 +227,60 @@ button:hover, .btn:hover {
 .badge-low { background: var(--color-tier-low-bg); color: var(--color-tier-low-text); }
 .badge-new-build { background: #e6eefc; color: #2456ad; }
 .badge-warning { background: var(--color-tier-medium-bg); color: var(--color-tier-medium-text); white-space: normal; }
+.badge-verified { background: var(--color-tier-high-bg); color: var(--color-tier-high-text); }
+.badge-estimated { background: #eef1f0; color: var(--color-text-muted); }
+
+.btn-edit {
+  margin-top: 6px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-heading);
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-edit:hover {
+  background: #eaf1fb;
+}
+
+.edit-row td {
+  background: #fafbfa;
+  padding: 16px;
+}
+
+.edit-form .form-hint {
+  margin-bottom: 12px;
+}
+
+.edit-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.edit-fields select,
+.edit-fields input[type="number"] {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.edit-actions {
+  margin-bottom: 0;
+}
+
+.edit-status {
+  font-size: 0.85rem;
+}
 
 .narrative {
   color: var(--color-text);

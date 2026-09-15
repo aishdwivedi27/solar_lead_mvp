@@ -63,7 +63,12 @@ def submit_addresses(entries: list[dict]) -> list[dict]:
 
     records = []
     for entry in cleaned:
-        record = {"id": str(uuid.uuid4()), "address": _format_address(entry), **entry}
+        record = {
+            "id": str(uuid.uuid4()),
+            "address": _format_address(entry),
+            "confidence": "estimated",
+            **entry,
+        }
         ADDRESS_RECORDS[record["id"]] = record
         records.append(record)
 
@@ -161,6 +166,66 @@ def submit_addresses(entries: list[dict]) -> list[dict]:
 
             score_result = score_address(record)
             record["tier"] = score_result.tier
-            record["narrative"] = generate_narrative(narrative_provider, record, score_result)
+            record["narrative"], record["narrative_unavailable_reason"] = generate_narrative(
+                narrative_provider, record, score_result
+            )
 
     return records
+
+
+# Manual override and recompute (stage 14). An assessor who has verified a
+# flagged address on-site (or via the Google Maps/Street View links) corrects
+# the specific input that was flagged, and this reruns only stages 10-13
+# (scoring, verification links, narrative) against the corrected data --
+# it never re-calls geocoding/Overpass/PVGIS/NDVI/canopy, since those already
+# ran and the whole point is the assessor's on-site knowledge overriding them.
+def recompute_record(record_id: str, corrections: dict) -> dict:
+    record = ADDRESS_RECORDS[record_id]
+
+    if corrections.get("confirmed_geocode_accurate"):
+        record["low_confidence_geocode"] = False
+
+    if corrections.get("confirmed_adjacent_structure") is not None:
+        record["verify_adjacent_structure"] = bool(corrections["confirmed_adjacent_structure"])
+
+    if corrections.get("confirmed_building_exists") is not None:
+        record["has_building_footprint"] = bool(corrections["confirmed_building_exists"])
+        record["ambiguous_existence"] = False
+
+    if corrections.get("corrected_canopy_height_m") is not None:
+        canopy_height_m = float(corrections["corrected_canopy_height_m"])
+        record["canopy_height_m"] = canopy_height_m
+        record["canopy_height_unavailable"] = False
+        if record["latitude"] is not None and record["longitude"] is not None:
+            record["estimated_shaded_hours"] = estimate_shaded_hours(
+                record["latitude"], record["longitude"], canopy_height_m
+            )
+
+    no_footprint = not record["has_building_footprint"]
+    new_path = "NEW_BUILD" if (no_footprint or record["planned_demolition_rebuild"]) else "EXISTING_ROOF"
+    if new_path != record["pipeline_path"]:
+        record["pipeline_path"] = new_path
+        if new_path == "NEW_BUILD":
+            if record["latitude"] is not None and record["longitude"] is not None:
+                with httpx.Client(headers={"User-Agent": NOMINATIM_USER_AGENT}, timeout=25.0) as client:
+                    record.update(get_pvgis_data(client, record["latitude"], record["longitude"]))
+            record["estimated_shaded_hours"] = None
+        else:
+            record["optimal_tilt_degrees"] = None
+            record["optimal_azimuth_degrees"] = None
+
+    if record["latitude"] is not None and record["longitude"] is not None and needs_verification(record):
+        record.update(generate_verification_links(record["latitude"], record["longitude"]))
+    else:
+        record["google_maps_link"] = None
+        record["street_view_link"] = None
+
+    score_result = score_address(record)
+    record["tier"] = score_result.tier
+    narrative_provider = get_narrative_provider()
+    record["narrative"], record["narrative_unavailable_reason"] = generate_narrative(
+        narrative_provider, record, score_result
+    )
+    record["confidence"] = "verified"
+
+    return record

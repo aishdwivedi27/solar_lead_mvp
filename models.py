@@ -16,3 +16,14 @@ class AddressEntry(BaseModel):
 
 class AddressesIn(BaseModel):
     addresses: list[AddressEntry] = Field(min_length=1, max_length=MAX_FORM_ROWS)
+
+
+class RecordCorrection(BaseModel):
+    """Assessor-supplied corrections for one flagged record (stage 14). Every
+    field is optional and left-untouched fields keep whatever the automated
+    pipeline originally found."""
+
+    confirmed_building_exists: bool | None = None
+    confirmed_adjacent_structure: bool | None = None
+    confirmed_geocode_accurate: bool | None = None
+    corrected_canopy_height_m: float | None = Field(default=None, ge=0)

@@ -29,6 +29,10 @@ from config import OPENCAGE_API_KEY, OPENCAGE_DAILY_REQUEST_LIMIT, logger
 NOMINATIM_MIN_DELAY_SECONDS = 1.0
 ROOFTOP_MATCH_TYPES = {"house", "building"}
 
+# Fallback chain for the locality name -- Nominatim/OpenCage use whichever of
+# these fits the place (a suburb inside a city, a standalone town, etc.).
+_LOCALITY_KEYS = ("suburb", "city", "town", "village")
+
 OPENCAGE_GEOCODE_URL = "https://api.opencagedata.com/geocode/v1/json"
 OPENCAGE_ROOFTOP_TYPES = {"building"}
 OPENCAGE_MIN_DELAY_SECONDS = 1.0  # OpenCage free trial is limited to 1 request/second.
@@ -170,6 +174,8 @@ def _geocode_opencage(
             "geocode_type": f"opencage:{result_type}",
             "geocode_importance": item.get("confidence"),
             "low_confidence_geocode": result_type not in OPENCAGE_ROOFTOP_TYPES,
+            "resolved_display_name": item.get("formatted"),
+            "resolved_components": _resolved_components_from_map(components),
         }
 
     with _opencage_state_lock:
@@ -180,6 +186,19 @@ def _geocode_opencage(
     return result
 
 
+def _resolved_components_from_map(address: dict, locality_keys: tuple = _LOCALITY_KEYS) -> dict:
+    """Normalizes a Nominatim `address` dict or OpenCage `components` dict into
+    the shape address_validation.py compares against user input."""
+    locality = next((address[key] for key in locality_keys if address.get(key)), "")
+    return {
+        "house_number": address.get("house_number", ""),
+        "road": address.get("road", ""),
+        "locality": locality,
+        "state": address.get("state", ""),
+        "postal_code": address.get("postcode", ""),
+    }
+
+
 def _to_geocode_result(result: dict) -> dict:
     match_type = result.get("addresstype") or result.get("type")
     return {
@@ -188,6 +207,8 @@ def _to_geocode_result(result: dict) -> dict:
         "geocode_type": match_type,
         "geocode_importance": result.get("importance"),
         "low_confidence_geocode": match_type not in ROOFTOP_MATCH_TYPES,
+        "resolved_display_name": result.get("display_name"),
+        "resolved_components": _resolved_components_from_map(result.get("address", {})),
     }
 
 
@@ -230,6 +251,8 @@ def geocode_address(
             "geocode_type": None,
             "geocode_importance": None,
             "low_confidence_geocode": True,
+            "resolved_display_name": None,
+            "resolved_components": {},
         }
         if best is None
         else _to_geocode_result(best)

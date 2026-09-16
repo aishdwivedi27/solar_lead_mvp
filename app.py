@@ -11,14 +11,17 @@ Local dev equivalent:
     uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from config import MAX_FORM_ROWS
+from address_validation import compare_address
+from config import MAX_FORM_ROWS, NOMINATIM_USER_AGENT
 from countries import COUNTRIES
-from models import AddressesIn, RecordCorrection
+from geocoding import geocode_address
+from models import AddressEntry, AddressesIn, RecordCorrection
 from pdf import build_results_pdf
 from pipeline import ADDRESS_RECORDS, recompute_record, submit_addresses
 
@@ -64,6 +67,26 @@ async def submit_form(request: Request):
 def submit_json(payload: AddressesIn):
     entries = [e.model_dump() for e in payload.addresses]
     return submit_addresses(entries)
+
+
+def _validate_address(entry: dict) -> dict:
+    """One cheap geocode lookup (no Overpass/PVGIS/NDVI/canopy) so the caller
+    can confirm/correct an address before the full pipeline runs on it."""
+    with httpx.Client(headers={"User-Agent": NOMINATIM_USER_AGENT}, timeout=25.0) as client:
+        geocode_result = geocode_address(
+            client,
+            entry["street_address"],
+            entry.get("city", ""),
+            entry.get("state_region", ""),
+            entry.get("postal_code", ""),
+            entry.get("country", ""),
+        )
+    return compare_address(entry, geocode_result)
+
+
+@app.post("/api/addresses/validate")
+async def validate_address(payload: AddressEntry):
+    return await run_in_threadpool(_validate_address, payload.model_dump())
 
 
 @app.post("/api/addresses/{record_id}/recompute")

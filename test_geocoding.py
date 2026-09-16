@@ -37,11 +37,26 @@ class _FakeClient:
 
 
 def _house_result(lat="1.0", lon="2.0"):
-    return {"lat": lat, "lon": lon, "addresstype": "house", "importance": 0.9}
+    return {
+        "lat": lat,
+        "lon": lon,
+        "addresstype": "house",
+        "importance": 0.9,
+        "display_name": "4 Berrin Road, Morphett Vale, South Australia, Australia",
+        "address": {"house_number": "4", "road": "Berrin Road", "suburb": "Morphett Vale"},
+    }
 
 
 def _road_result(lat="1.0", lon="2.0"):
-    return {"lat": lat, "lon": lon, "addresstype": "road", "type": "residential", "importance": 0.5}
+    return {
+        "lat": lat,
+        "lon": lon,
+        "addresstype": "road",
+        "type": "residential",
+        "importance": 0.5,
+        "display_name": "Berrin Road, Morphett Vale, South Australia, Australia",
+        "address": {"road": "Berrin Road", "suburb": "Morphett Vale"},
+    }
 
 
 def test_rooftop_result_used_as_is_no_retry():
@@ -55,6 +70,14 @@ def test_rooftop_result_used_as_is_no_retry():
         "geocode_type": "house",
         "geocode_importance": 0.9,
         "low_confidence_geocode": False,
+        "resolved_display_name": "4 Berrin Road, Morphett Vale, South Australia, Australia",
+        "resolved_components": {
+            "house_number": "4",
+            "road": "Berrin Road",
+            "locality": "Morphett Vale",
+            "state": "",
+            "postal_code": "",
+        },
     }
     assert len(client.calls) == 1
 
@@ -109,6 +132,8 @@ def test_no_results_returns_none_coordinates():
         "geocode_type": None,
         "geocode_importance": None,
         "low_confidence_geocode": True,
+        "resolved_display_name": None,
+        "resolved_components": {},
     }
 
 

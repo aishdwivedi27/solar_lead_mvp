@@ -374,6 +374,41 @@ details.debug-section summary {
   color: var(--color-danger);
 }
 
+.address-suggestion {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #f0dca0;
+  background: #fff8e8;
+  border-radius: var(--radius);
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.address-suggestion p {
+  margin: 0 0 10px;
+}
+
+.address-suggestion strong {
+  color: #8a6100;
+}
+
+.address-suggestion-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.address-suggestion-actions button {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+.address-suggestion-checking {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 .loading-overlay {
   position: fixed;
   inset: 0;

@@ -65,10 +65,10 @@ def test_suburb_typo_flagged_with_suggestion():
 
 
 def test_combined_street_and_suburb_typo_flagged():
-    entry = {"street_address": "4 Berin Road", "city": "Morphet vale"}
+    entry = {"street_address": "53 Kng William Road", "city": "Unly"}
     geocode_result = _geocode_result(
-        {"house_number": "4", "road": "Berrin Rd", "locality": "Morphett Vale", "state": "", "postal_code": ""},
-        "4 Berrin Rd, Morphett Vale, South Australia, Australia",
+        {"house_number": "53", "road": "King William Rd", "locality": "Unley", "state": "", "postal_code": ""},
+        "53 King William Rd, Unley, South Australia, Australia",
     )
 
     result = compare_address(entry, geocode_result)
@@ -118,6 +118,18 @@ def test_all_caps_locality_is_shown_in_proper_case():
     assert result["suggested"]["city"] == "Adelaide"
     assert result["suggested"]["state_region"] == "South Australia"
     assert result["resolved_display_name"] == "279 Grote Street, Adelaide, South Australia, Australia"
+
+
+def test_state_abbreviation_kept_upper_while_street_type_still_title_cased():
+    entry = {"street_address": "279 Grott St", "city": "Adelaide"}
+    geocode_result = _geocode_result(
+        {"house_number": "279", "road": "Grote Street", "locality": "Adelaide", "state": "", "postal_code": "5000"},
+        "279 Grote ST, Adelaide SA 5000, Australia",
+    )
+
+    result = compare_address(entry, geocode_result)
+
+    assert result["resolved_display_name"] == "279 Grote St, Adelaide SA 5000, Australia"
 
 
 def test_street_typo_flagged_even_when_resolved_road_is_all_caps():

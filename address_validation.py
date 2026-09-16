@@ -1,13 +1,13 @@
 """Compares a user-typed address against what the geocoder actually resolved,
 so an address confirmation step can catch typos (e.g. "Osuvillam Beach" typed
-for "O'Sullivan Beach", or "Morphet Vale" for "Morphett Vale") before the slow
+for "O'Sullivan Beach", or "Unly" for "Unley") before the slow
 pipeline (Overpass/PVGIS/NDVI/canopy) runs on a misspelled address. Pure
 comparison logic -- the geocoding lookup itself already happened in
 geocoding.py.
 
 A fuzzy-similarity comparison (e.g. difflib ratio) turns out not to work
 here: a single-letter typo inside a short proper noun ("Grote" vs "Grott",
-"Berrin" vs "Berin") still scores as 80-90% similar, which is indistinguishable
+"King" vs "Kng") still scores as 80-90% similar, which is indistinguishable
 from a harmless formatting difference. Instead, each field is normalized
 (case/punctuation-insensitive) and street-type words are expanded to a
 canonical form (so "St" == "Street", "Rd" == "Road") and then compared for
@@ -32,6 +32,12 @@ _STREET_TYPE_EXPANSIONS = {
 _PUNCTUATION_RE = re.compile(r"[^\w\s]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
+# Australian state/territory abbreviations, kept upper-case rather than
+# title-cased by _smart_title_case -- "SA"/"NSW" read as typos ("Sa"/"Nsw")
+# once title-cased, unlike street-type abbreviations ("ST" -> "St"), which
+# are meant to be title-cased.
+_STATE_ABBREVIATIONS = {"nsw", "vic", "qld", "wa", "sa", "tas", "act", "nt"}
+
 
 def normalize_street_text(text: str) -> str:
     """Case/punctuation-insensitive form with street-type words expanded to a
@@ -55,11 +61,15 @@ def _smart_title_case(text: str) -> str:
     locality names, which are commonly stored upper-case) into proper title
     case, without touching text that's already mixed-case -- so correctly
     cased provider text, and names like "O'Sullivan" or "McLaren", pass
-    through untouched."""
+    through untouched. A state/territory abbreviation (e.g. "SA", "NSW") is
+    also left untouched even when ALL-CAPS, since title-casing those
+    (-> "Sa", "Nsw") reads as a typo."""
 
     def fix_word(word: str) -> str:
         letters = [c for c in word if c.isalpha()]
         if len(letters) < 2 or not all(c.isupper() for c in letters):
+            return word
+        if word.lower() in _STATE_ABBREVIATIONS:
             return word
         chars = []
         capitalize_next = True

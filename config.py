@@ -7,9 +7,19 @@ to look for what's configurable and how it's sourced.
 import logging
 import os
 
+import truststore
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Makes Python's ssl module verify certificates against the OS trust store
+# instead of the certifi-bundled CA list. Needed because SSL-inspecting
+# antivirus/corporate proxies (e.g. Norton's "Web/Mail Shield") re-sign
+# outbound HTTPS with a locally-generated root CA that Windows trusts but
+# certifi doesn't ship, which otherwise makes every httpx geocoding request
+# fail with CERTIFICATE_VERIFY_FAILED on an affected machine. A no-op on
+# machines/platforms without such interception, so this is safe on Render too.
+truststore.inject_into_ssl()
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("solar_lead_mvp")

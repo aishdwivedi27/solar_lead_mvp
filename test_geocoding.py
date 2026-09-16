@@ -51,8 +51,8 @@ def _house_result(lat="1.0", lon="2.0"):
         "lon": lon,
         "addresstype": "house",
         "importance": 0.9,
-        "display_name": "4 Berrin Road, Morphett Vale, South Australia, Australia",
-        "address": {"house_number": "4", "road": "Berrin Road", "suburb": "Morphett Vale"},
+        "display_name": "53 King William Road, Unley, South Australia, Australia",
+        "address": {"house_number": "53", "road": "King William Road", "suburb": "Unley"},
     }
 
 
@@ -63,15 +63,15 @@ def _road_result(lat="1.0", lon="2.0"):
         "addresstype": "road",
         "type": "residential",
         "importance": 0.5,
-        "display_name": "Berrin Road, Morphett Vale, South Australia, Australia",
-        "address": {"road": "Berrin Road", "suburb": "Morphett Vale"},
+        "display_name": "King William Road, Unley, South Australia, Australia",
+        "address": {"road": "King William Road", "suburb": "Unley"},
     }
 
 
 def test_rooftop_result_used_as_is_no_retry():
     client = _FakeClient([[_house_result()]])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result == {
         "latitude": 1.0,
@@ -79,11 +79,11 @@ def test_rooftop_result_used_as_is_no_retry():
         "geocode_type": "house",
         "geocode_importance": 0.9,
         "low_confidence_geocode": False,
-        "resolved_display_name": "4 Berrin Road, Morphett Vale, South Australia, Australia",
+        "resolved_display_name": "53 King William Road, Unley, South Australia, Australia",
         "resolved_components": {
-            "house_number": "4",
-            "road": "Berrin Road",
-            "locality": "Morphett Vale",
+            "house_number": "53",
+            "road": "King William Road",
+            "locality": "Unley",
             "state": "",
             "postal_code": "",
         },
@@ -94,7 +94,7 @@ def test_rooftop_result_used_as_is_no_retry():
 def test_rooftop_match_preferred_over_higher_ranked_road_result_no_retry():
     client = _FakeClient([[_road_result(), _house_result(lat="3.0", lon="4.0")]])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "house"
     assert result["latitude"] == 3.0
@@ -108,7 +108,7 @@ def test_retries_without_postalcode_and_uses_rooftop_result():
         [_house_result(lat="5.0", lon="6.0")],
     ])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "house"
     assert result["latitude"] == 5.0
@@ -123,7 +123,7 @@ def test_falls_back_to_road_result_when_retry_also_non_rooftop():
         [_road_result()],
     ])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "road"
     assert result["low_confidence_geocode"] is True
@@ -149,7 +149,7 @@ def test_no_results_returns_none_coordinates():
 def test_no_retry_when_no_postal_code_supplied():
     client = _FakeClient([[_road_result()]])
 
-    result = geocode_address(client, "Berrin Road")
+    result = geocode_address(client, "King William Road")
 
     assert result["geocode_type"] == "road"
     assert len(client.calls) == 1
@@ -171,7 +171,7 @@ def test_opencage_fallback_used_when_nominatim_only_finds_road(monkeypatch, tmp_
     _configure_opencage(monkeypatch, tmp_path)
     client = _FakeClient([[_road_result()], [_road_result()], _opencage_building_response()])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "opencage:building"
     assert result["latitude"] == 7.0
@@ -182,10 +182,10 @@ def test_opencage_fallback_used_when_nominatim_only_finds_road(monkeypatch, tmp_
 def test_opencage_result_is_cached_and_not_requested_twice(monkeypatch, tmp_path):
     _configure_opencage(monkeypatch, tmp_path)
     first_client = _FakeClient([[_road_result()], [_road_result()], _opencage_building_response()])
-    geocode_address(first_client, "4 Berrin Road", postal_code="5162")
+    geocode_address(first_client, "53 King William Road", postal_code="5061")
 
     second_client = _FakeClient([[_road_result()], [_road_result()]])
-    result = geocode_address(second_client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(second_client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "opencage:building"
     assert len(second_client.calls) == 2  # served from cache -- no OpenCage request made
@@ -195,7 +195,7 @@ def test_opencage_fallback_skipped_once_daily_limit_reached(monkeypatch, tmp_pat
     _configure_opencage(monkeypatch, tmp_path, daily_limit=0)
     client = _FakeClient([[_road_result()], [_road_result()]])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "road"
     assert result["low_confidence_geocode"] is True
@@ -311,7 +311,7 @@ def test_opencage_stale_cache_entry_missing_newer_fields_is_refetched(monkeypatc
     forever just because its key matches -- it's refetched and the full,
     current-shape result is what callers see."""
     _configure_opencage(monkeypatch, tmp_path)
-    cache_key = geocoding._opencage_cache_key("4 Berrin Road", "", "", "5162", "")
+    cache_key = geocoding._opencage_cache_key("53 King William Road", "", "", "5061", "")
     (tmp_path / "cache.json").write_text(json.dumps({
         cache_key: {
             "latitude": 7.0,
@@ -324,18 +324,18 @@ def test_opencage_stale_cache_entry_missing_newer_fields_is_refetched(monkeypatc
     }))
     fresh_response = {
         "results": [{
-            "components": {"_type": "building", "house_number": "4", "road": "Berrin Road"},
+            "components": {"_type": "building", "house_number": "53", "road": "King William Road"},
             "geometry": {"lat": 7.0, "lng": 8.0},
             "confidence": 9,
-            "formatted": "4 Berrin Road, Morphett Vale, South Australia, Australia",
+            "formatted": "53 King William Road, Unley, South Australia, Australia",
         }]
     }
     client = _FakeClient([[_road_result()], [_road_result()], fresh_response])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "opencage:building"
-    assert result["resolved_display_name"] == "4 Berrin Road, Morphett Vale, South Australia, Australia"
+    assert result["resolved_display_name"] == "53 King William Road, Unley, South Australia, Australia"
     assert len(client.calls) == 3  # refetched rather than trusting the incomplete cached entry
 
 
@@ -345,7 +345,7 @@ def test_no_opencage_fallback_when_api_key_unset(monkeypatch, tmp_path):
     monkeypatch.setattr(geocoding, "OPENCAGE_USAGE_PATH", tmp_path / "usage.json")
     client = _FakeClient([[_road_result()], [_road_result()]])
 
-    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+    result = geocode_address(client, "53 King William Road", postal_code="5061")
 
     assert result["geocode_type"] == "road"
     assert len(client.calls) == 2

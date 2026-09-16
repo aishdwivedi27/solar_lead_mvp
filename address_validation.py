@@ -33,14 +33,18 @@ _PUNCTUATION_RE = re.compile(r"[^\w\s]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-def _normalize(text: str) -> str:
+def normalize_street_text(text: str) -> str:
+    """Case/punctuation-insensitive form with street-type words expanded to a
+    canonical spelling (so "St" == "Street", "Rd" == "Road"). Shared with
+    street_names.py, which normalizes the same way before fuzzy-matching a
+    typed street against real nearby OSM street names."""
     text = _PUNCTUATION_RE.sub(" ", text.strip().lower())
     words = [_STREET_TYPE_EXPANSIONS.get(word, word) for word in text.split()]
     return _WHITESPACE_RE.sub(" ", " ".join(words)).strip()
 
 
 def _matches(entered: str, resolved: str) -> bool:
-    entered, resolved = _normalize(entered), _normalize(resolved)
+    entered, resolved = normalize_street_text(entered), normalize_street_text(resolved)
     if not entered or not resolved:
         return True  # nothing typed/resolved for this field -- not a conflict
     return entered == resolved

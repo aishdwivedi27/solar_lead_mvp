@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import geocoding
@@ -25,7 +27,10 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    """Stands in for httpx.Client: returns queued responses in order, one per .get() call."""
+    """Stands in for httpx.Client: returns queued responses in order, one per
+    .get()/.post() call (Nominatim and OpenCage use .get(), the Overpass
+    street-name lookup uses .post(), but both draw from the same queue since
+    tests care about call order, not which method made each call)."""
 
     def __init__(self, responses):
         self._responses = list(responses)
@@ -33,6 +38,10 @@ class _FakeClient:
 
     def get(self, url, params=None):
         self.calls.append(params)
+        return _FakeResponse(self._responses.pop(0))
+
+    def post(self, url, data=None):
+        self.calls.append(data)
         return _FakeResponse(self._responses.pop(0))
 
 
@@ -197,12 +206,19 @@ def _opencage_road_response(lat=7.0, lon=8.0):
     return {"results": [{"components": {"_type": "road"}, "geometry": {"lat": lat, "lng": lon}, "confidence": 5}]}
 
 
+def _overpass_streets_response(names):
+    return {"elements": [{"tags": {"name": name}} for name in names]}
+
+
 def test_opencage_low_confidence_guess_used_when_nominatim_finds_nothing(monkeypatch, tmp_path):
     """Even a non-rooftop OpenCage guess beats surfacing a bare "couldn't
     confirm" with no suggestion at all, since it still gives the caller
     something to offer the user as a "did you mean" address."""
     _configure_opencage(monkeypatch, tmp_path)
-    client = _FakeClient([[], [], _opencage_road_response()])
+    client = _FakeClient([
+        [], [], _opencage_road_response(),
+        _overpass_streets_response([]),  # street-name fallback finds no real street to suggest
+    ])
 
     result = geocode_address(client, "Nonexistent Street", postal_code="0000")
 
@@ -257,11 +273,70 @@ def test_opencage_ignored_when_neither_result_has_a_road_match(monkeypatch, tmp_
     Nominatim's result is kept rather than switching to OpenCage for no
     actual gain."""
     _configure_opencage(monkeypatch, tmp_path)
-    client = _FakeClient([[_city_result()], _opencage_road_response()])
+    client = _FakeClient([
+        [_city_result()], _opencage_road_response(),
+        _overpass_streets_response([]),  # street-name fallback finds no real street to suggest
+    ])
 
     result = geocode_address(client, "279 Grott Street", city="Adelaide")
 
     assert result["geocode_type"] == "city"
+
+
+def test_street_typo_corrected_via_overpass_when_neither_geocoder_resolves_it(monkeypatch, tmp_path):
+    """Neither Nominatim nor OpenCage can fuzzy-correct "Grott" -> "Grote" on
+    their own -- both only resolve a city-level pin. The Overpass-based
+    fallback looks up the real street names OSM has near that pin, finds
+    "Grote Street" is a close match for the typed "Grott Street", and a
+    retried geocode with the corrected name resolves a rooftop match."""
+    _configure_opencage(monkeypatch, tmp_path)
+    client = _FakeClient([
+        [_city_result()],                                       # nominatim: city-level pin only
+        _opencage_road_response(),                               # opencage: also no road match
+        _overpass_streets_response(["Grote Street", "Sturt Street"]),  # real streets near that pin
+        [_house_result(lat="9.0", lon="10.0")],                  # retried nominatim w/ corrected street
+        _opencage_road_response(),                                # retried opencage (unused -- nominatim wins)
+    ])
+
+    result = geocode_address(client, "279 Grott Street", city="Adelaide")
+
+    assert result["geocode_type"] == "house"
+    assert result["latitude"] == 9.0
+    assert result["low_confidence_geocode"] is False
+
+
+def test_opencage_stale_cache_entry_missing_newer_fields_is_refetched(monkeypatch, tmp_path):
+    """A cache entry written by an older version of this code (before
+    resolved_display_name/resolved_components existed) must not be trusted
+    forever just because its key matches -- it's refetched and the full,
+    current-shape result is what callers see."""
+    _configure_opencage(monkeypatch, tmp_path)
+    cache_key = geocoding._opencage_cache_key("4 Berrin Road", "", "", "5162", "")
+    (tmp_path / "cache.json").write_text(json.dumps({
+        cache_key: {
+            "latitude": 7.0,
+            "longitude": 8.0,
+            "geocode_type": "opencage:building",
+            "geocode_importance": 9,
+            "low_confidence_geocode": False,
+            # resolved_display_name / resolved_components missing -- stale schema
+        }
+    }))
+    fresh_response = {
+        "results": [{
+            "components": {"_type": "building", "house_number": "4", "road": "Berrin Road"},
+            "geometry": {"lat": 7.0, "lng": 8.0},
+            "confidence": 9,
+            "formatted": "4 Berrin Road, Morphett Vale, South Australia, Australia",
+        }]
+    }
+    client = _FakeClient([[_road_result()], [_road_result()], fresh_response])
+
+    result = geocode_address(client, "4 Berrin Road", postal_code="5162")
+
+    assert result["geocode_type"] == "opencage:building"
+    assert result["resolved_display_name"] == "4 Berrin Road, Morphett Vale, South Australia, Australia"
+    assert len(client.calls) == 3  # refetched rather than trusting the incomplete cached entry
 
 
 def test_no_opencage_fallback_when_api_key_unset(monkeypatch, tmp_path):

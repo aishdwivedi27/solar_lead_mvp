@@ -8,13 +8,21 @@ The OpenCage Geocoding API is queried on every lookup as a second opinion
 (see `_geocode_opencage`), and `_pick_geocode_result` returns whichever of
 the two results actually resolved a rooftop- or street-level match.
 OpenCage blends OSM with other open address datasets, so it isn't limited
-by the same OSM coverage gaps and can sometimes fuzzy-resolve a typo (e.g.
-"Grott" -> "Grote") that Nominatim's exact structured-field search can't;
-its free trial signup needs no credit card. That extra call is metered by
-an on-disk cache (never re-request an address already looked up) and an
-on-disk daily counter (never exceed OPENCAGE_DAILY_REQUEST_LIMIT
-requests/day), so lead volume can't run up unexpected OpenCage usage, and a
-per-call pause respects OpenCage's own 1-request/second limit.
+by the same OSM coverage gaps Nominatim has; its free trial signup needs no
+credit card. That extra call is metered by an on-disk cache (never
+re-request an address already looked up) and an on-disk daily counter
+(never exceed OPENCAGE_DAILY_REQUEST_LIMIT requests/day), so lead volume
+can't run up unexpected OpenCage usage, and a per-call pause respects
+OpenCage's own 1-request/second limit.
+
+Neither geocoder actually spell-corrects a typo'd street name -- each just
+matches against its own address index and returns whatever partial match it
+can (typically a bare city-level pin) when the street doesn't hit exactly.
+When that happens, `geocode_address` falls through to a third stage
+(street_names.suggest_street_correction): it looks up the real street names
+OpenStreetMap has near wherever the geocoders did resolve, fuzzy-matches
+the typed street against that real local list (e.g. "Grott" -> "Grote"),
+and retries the geocode with the corrected name.
 """
 
 import json
@@ -26,6 +34,7 @@ from pathlib import Path
 import httpx
 
 from config import OPENCAGE_API_KEY, OPENCAGE_DAILY_REQUEST_LIMIT, logger
+from street_names import suggest_street_correction
 
 NOMINATIM_MIN_DELAY_SECONDS = 1.0
 ROOFTOP_MATCH_TYPES = {"house", "building"}
@@ -90,6 +99,21 @@ def _opencage_cache_key(street_address: str, city: str, state_region: str, posta
     )
 
 
+# The full shape a cached OpenCage result must have to be trusted. Bumping
+# this whenever the result dict gains a field means a cache entry written by
+# an older version of this code (missing the new field) is treated as a
+# miss and transparently refetched, instead of being trusted as-is forever
+# -- an on-disk cache has no other way to notice the code around it changed.
+_OPENCAGE_RESULT_KEYS = {
+    "latitude", "longitude", "geocode_type", "geocode_importance",
+    "low_confidence_geocode", "resolved_display_name", "resolved_components",
+}
+
+
+def _is_valid_cached_opencage_result(value) -> bool:
+    return value is None or (isinstance(value, dict) and _OPENCAGE_RESULT_KEYS.issubset(value))
+
+
 def _opencage_request_allowed_and_recorded() -> bool:
     """Checks today's OpenCage request count against the daily cap and, if under it, records one more use.
 
@@ -138,7 +162,7 @@ def _geocode_opencage(
     cache_key = _opencage_cache_key(street_address, city, state_region, postal_code, country)
     with _opencage_state_lock:
         cache = _load_json(OPENCAGE_CACHE_PATH, {})
-    if cache_key in cache:
+    if cache_key in cache and _is_valid_cached_opencage_result(cache[cache_key]):
         return cache[cache_key]
 
     if not _opencage_request_allowed_and_recorded():
@@ -206,10 +230,9 @@ def _has_road_match(geocode_result: dict) -> bool:
 
 def _pick_geocode_result(nominatim_result: dict, opencage_result: dict | None) -> dict:
     """Nominatim is queried first, but OpenCage is now consulted on every
-    lookup as a second opinion, since Nominatim's structured search can't
-    fuzzy-correct a typo (e.g. "Grott" -> "Grote") the way OpenCage's blended
-    address data sometimes can. Whichever result actually resolved a
-    rooftop-level or street-level match wins."""
+    lookup as a second opinion, since it blends OSM with other open address
+    datasets and so isn't limited by the same coverage gaps. Whichever
+    result actually resolved a rooftop-level or street-level match wins."""
     if opencage_result is None:
         return nominatim_result
     if nominatim_result["latitude"] is None:
@@ -238,13 +261,13 @@ def _to_geocode_result(result: dict) -> dict:
     }
 
 
-def geocode_address(
+def _geocode_once(
     client: httpx.Client,
     street_address: str,
-    city: str = "",
-    state_region: str = "",
-    postal_code: str = "",
-    country: str = "",
+    city: str,
+    state_region: str,
+    postal_code: str,
+    country: str,
 ) -> dict:
     base_params = {
         "format": "json",
@@ -286,6 +309,41 @@ def geocode_address(
 
     opencage_result = _geocode_opencage(client, street_address, city, state_region, postal_code, country)
     return _pick_geocode_result(nominatim_result, opencage_result)
+
+
+def geocode_address(
+    client: httpx.Client,
+    street_address: str,
+    city: str = "",
+    state_region: str = "",
+    postal_code: str = "",
+    country: str = "",
+) -> dict:
+    picked = _geocode_once(client, street_address, city, state_region, postal_code, country)
+
+    # Neither geocoder resolved a street or rooftop match (typically a bare
+    # city-level pin) -- last resort: look up the real street names OSM has
+    # near wherever they *did* resolve, and see if the typed street is a
+    # near-miss for one of them (e.g. "Grott" -> "Grote"). Only worth trying
+    # once we have some point to search around, and only for a genuine
+    # improvement (a road actually turns up); an unhelpful correction just
+    # falls through to the original result. A rooftop/building-level pick is
+    # already a good resolution even on the rare mocked/real response that
+    # doesn't happen to echo back a "road" field, so this is gated on
+    # low-confidence rather than on the road field alone.
+    if (
+        street_address
+        and picked["low_confidence_geocode"]
+        and not _has_road_match(picked)
+        and picked["latitude"] is not None
+    ):
+        corrected_street = suggest_street_correction(client, street_address, picked["latitude"], picked["longitude"])
+        if corrected_street:
+            corrected_picked = _geocode_once(client, corrected_street, city, state_region, postal_code, country)
+            if _has_road_match(corrected_picked):
+                return corrected_picked
+
+    return picked
 
 
 def nominatim_rate_limit_pause() -> None:

@@ -46,20 +46,53 @@ def _matches(entered: str, resolved: str) -> bool:
     return entered == resolved
 
 
+def _smart_title_case(text: str) -> str:
+    """Fixes ALL-CAPS words from raw geocoder data (e.g. Australian OSM/G-NAF
+    locality names, which are commonly stored upper-case) into proper title
+    case, without touching text that's already mixed-case -- so correctly
+    cased provider text, and names like "O'Sullivan" or "McLaren", pass
+    through untouched."""
+
+    def fix_word(word: str) -> str:
+        letters = [c for c in word if c.isalpha()]
+        if len(letters) < 2 or not all(c.isupper() for c in letters):
+            return word
+        chars = []
+        capitalize_next = True
+        for ch in word:
+            if ch.isalpha():
+                chars.append(ch.upper() if capitalize_next else ch.lower())
+                capitalize_next = False
+            else:
+                chars.append(ch)
+                capitalize_next = ch in ("'", "-")
+        return "".join(chars)
+
+    return " ".join(fix_word(word) for word in text.split(" "))
+
+
 def compare_address(entry: dict, geocode_result: dict) -> dict:
     """Returns whether `entry` (as typed) needs the user's confirmation
     against `geocode_result` (from geocoding.geocode_address), plus a
     suggested corrected set of fields drawn from the resolved address."""
     components = geocode_result.get("resolved_components") or {}
     resolved_display_name = geocode_result.get("resolved_display_name")
+    if resolved_display_name:
+        resolved_display_name = _smart_title_case(resolved_display_name)
     low_confidence = bool(geocode_result.get("low_confidence_geocode"))
 
     resolved_street = " ".join(
         part for part in (components.get("house_number", ""), components.get("road", "")) if part
     )
+    if resolved_street:
+        resolved_street = _smart_title_case(resolved_street)
     resolved_locality = components.get("locality", "")
+    if resolved_locality:
+        resolved_locality = _smart_title_case(resolved_locality)
     resolved_postal_code = components.get("postal_code", "")
     resolved_state = components.get("state", "")
+    if resolved_state:
+        resolved_state = _smart_title_case(resolved_state)
 
     if geocode_result.get("latitude") is None or geocode_result.get("longitude") is None:
         needs_confirmation = True

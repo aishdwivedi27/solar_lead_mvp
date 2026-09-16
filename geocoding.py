@@ -4,16 +4,17 @@ Uses the structured query fields (street/city/state/postalcode/country)
 rather than a single free-text `q` string, and does not restrict results to
 any one country -- callers pass whichever country the lead supplied.
 
-When Nominatim (OpenStreetMap data) only resolves an address to a road --
-because the building itself isn't mapped in OSM -- the OpenCage Geocoding
-API is used as a rooftop-level fallback (see `_geocode_opencage`). OpenCage
-blends OSM with other open address datasets, so it isn't limited by the
-same OSM gaps, and its free trial signup needs no credit card. That
-fallback is metered by an on-disk cache (never re-request an address
-already looked up) and an on-disk daily counter (never exceed
-OPENCAGE_DAILY_REQUEST_LIMIT requests/day), so lead volume can't run up
-unexpected OpenCage usage, and a per-call pause respects OpenCage's own
-1-request/second limit.
+The OpenCage Geocoding API is queried on every lookup as a second opinion
+(see `_geocode_opencage`), and `_pick_geocode_result` returns whichever of
+the two results actually resolved a rooftop- or street-level match.
+OpenCage blends OSM with other open address datasets, so it isn't limited
+by the same OSM coverage gaps and can sometimes fuzzy-resolve a typo (e.g.
+"Grott" -> "Grote") that Nominatim's exact structured-field search can't;
+its free trial signup needs no credit card. That extra call is metered by
+an on-disk cache (never re-request an address already looked up) and an
+on-disk daily counter (never exceed OPENCAGE_DAILY_REQUEST_LIMIT
+requests/day), so lead volume can't run up unexpected OpenCage usage, and a
+per-call pause respects OpenCage's own 1-request/second limit.
 """
 
 import json
@@ -199,6 +200,31 @@ def _resolved_components_from_map(address: dict, locality_keys: tuple = _LOCALIT
     }
 
 
+def _has_road_match(geocode_result: dict) -> bool:
+    return bool(geocode_result.get("resolved_components", {}).get("road"))
+
+
+def _pick_geocode_result(nominatim_result: dict, opencage_result: dict | None) -> dict:
+    """Nominatim is queried first, but OpenCage is now consulted on every
+    lookup as a second opinion, since Nominatim's structured search can't
+    fuzzy-correct a typo (e.g. "Grott" -> "Grote") the way OpenCage's blended
+    address data sometimes can. Whichever result actually resolved a
+    rooftop-level or street-level match wins."""
+    if opencage_result is None:
+        return nominatim_result
+    if nominatim_result["latitude"] is None:
+        return opencage_result
+    if not opencage_result["low_confidence_geocode"]:
+        return opencage_result
+    if not nominatim_result["low_confidence_geocode"]:
+        return nominatim_result
+    # Both are low-confidence: prefer whichever actually resolved a street,
+    # since a specific (if unverified) street beats a bare city-level pin.
+    if _has_road_match(opencage_result) and not _has_road_match(nominatim_result):
+        return opencage_result
+    return nominatim_result
+
+
 def _to_geocode_result(result: dict) -> dict:
     match_type = result.get("addresstype") or result.get("type")
     return {
@@ -258,18 +284,8 @@ def geocode_address(
         else _to_geocode_result(best)
     )
 
-    if nominatim_result["low_confidence_geocode"]:
-        opencage_result = _geocode_opencage(client, street_address, city, state_region, postal_code, country)
-        if opencage_result is not None:
-            if not opencage_result["low_confidence_geocode"]:
-                return opencage_result
-            # Nominatim found nothing at all -- a low-confidence OpenCage guess
-            # still gives the caller a "did you mean" address to offer, which
-            # beats surfacing a bare "couldn't confirm" with no suggestion.
-            if nominatim_result["latitude"] is None and opencage_result["latitude"] is not None:
-                return opencage_result
-
-    return nominatim_result
+    opencage_result = _geocode_opencage(client, street_address, city, state_region, postal_code, country)
+    return _pick_geocode_result(nominatim_result, opencage_result)
 
 
 def nominatim_rate_limit_pause() -> None:

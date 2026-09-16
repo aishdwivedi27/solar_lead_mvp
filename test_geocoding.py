@@ -211,6 +211,59 @@ def test_opencage_low_confidence_guess_used_when_nominatim_finds_nothing(monkeyp
     assert result["low_confidence_geocode"] is True
 
 
+def _city_result(lat="1.0", lon="2.0"):
+    """A Nominatim match that found *something* (a city-level pin with
+    coordinates) but couldn't resolve the street itself -- e.g. because the
+    street was typo'd and didn't match the OSM road-name index."""
+    return {
+        "lat": lat,
+        "lon": lon,
+        "addresstype": "city",
+        "importance": 0.5,
+        "display_name": "Adelaide, South Australia, Australia",
+        "address": {"suburb": "Adelaide"},
+    }
+
+
+def _opencage_road_match_response(lat=7.0, lon=8.0, road="Grote Street"):
+    return {
+        "results": [
+            {
+                "components": {"_type": "road", "road": road, "city": "Adelaide"},
+                "geometry": {"lat": lat, "lng": lon},
+                "confidence": 5,
+            }
+        ]
+    }
+
+
+def test_opencage_road_match_preferred_over_nominatim_city_level_pin(monkeypatch, tmp_path):
+    """Nominatim found a city-level pin (has coordinates) but no street match;
+    OpenCage's second-opinion lookup did resolve a street. OpenCage's result
+    should win even though it's still "low confidence" by the rooftop-only
+    definition, since a resolved street beats a bare city pin."""
+    _configure_opencage(monkeypatch, tmp_path)
+    client = _FakeClient([[_city_result()], _opencage_road_match_response()])
+
+    result = geocode_address(client, "279 Grott Street", city="Adelaide")
+
+    assert result["geocode_type"] == "opencage:road"
+    assert result["resolved_components"]["road"] == "Grote Street"
+    assert result["low_confidence_geocode"] is True
+
+
+def test_opencage_ignored_when_neither_result_has_a_road_match(monkeypatch, tmp_path):
+    """Both results are low-confidence and neither resolved a street --
+    Nominatim's result is kept rather than switching to OpenCage for no
+    actual gain."""
+    _configure_opencage(monkeypatch, tmp_path)
+    client = _FakeClient([[_city_result()], _opencage_road_response()])
+
+    result = geocode_address(client, "279 Grott Street", city="Adelaide")
+
+    assert result["geocode_type"] == "city"
+
+
 def test_no_opencage_fallback_when_api_key_unset(monkeypatch, tmp_path):
     monkeypatch.setattr(geocoding, "OPENCAGE_API_KEY", "")
     monkeypatch.setattr(geocoding, "OPENCAGE_CACHE_PATH", tmp_path / "cache.json")

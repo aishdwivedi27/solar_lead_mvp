@@ -103,3 +103,32 @@ def test_low_confidence_geocode_needs_confirmation_even_if_text_matches():
     result = compare_address(entry, geocode_result)
 
     assert result["needs_confirmation"] is True
+
+
+def test_all_caps_locality_is_shown_in_proper_case():
+    entry = {"street_address": "279 Grote St", "city": "Adelaide"}
+    geocode_result = _geocode_result(
+        {"house_number": "279", "road": "Grote Street", "locality": "ADELAIDE", "state": "SOUTH AUSTRALIA", "postal_code": ""},
+        "279 Grote Street, ADELAIDE, SOUTH AUSTRALIA, Australia",
+    )
+
+    result = compare_address(entry, geocode_result)
+
+    assert result["needs_confirmation"] is False
+    assert result["suggested"]["city"] == "Adelaide"
+    assert result["suggested"]["state_region"] == "South Australia"
+    assert result["resolved_display_name"] == "279 Grote Street, Adelaide, South Australia, Australia"
+
+
+def test_street_typo_flagged_even_when_resolved_road_is_all_caps():
+    entry = {"street_address": "279 Grott street", "city": "Adelaide"}
+    geocode_result = _geocode_result(
+        {"house_number": "279", "road": "GROTE STREET", "locality": "ADELAIDE", "state": "", "postal_code": ""},
+        "279 GROTE STREET, ADELAIDE, South Australia, Australia",
+    )
+
+    result = compare_address(entry, geocode_result)
+
+    assert result["needs_confirmation"] is True
+    assert result["suggested"]["street_address"] == "279 Grote Street"
+    assert result["suggested"]["city"] == "Adelaide"

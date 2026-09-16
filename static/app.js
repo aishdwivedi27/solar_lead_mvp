@@ -246,8 +246,18 @@
   var form = document.getElementById("addresses-form");
   var submitBtn = document.getElementById("submit-btn");
   var overlay = document.getElementById("loading-overlay");
+  var overlayTitle = overlay ? overlay.querySelector(".loading-title") : null;
   var addressGateInProgress = false;
   var addressGatePassed = false;
+
+  function showOverlay(text) {
+    if (overlayTitle) overlayTitle.textContent = text;
+    overlay.hidden = false;
+  }
+
+  function hideOverlay() {
+    overlay.hidden = true;
+  }
 
   function isConfirmed(block) {
     return block.dataset.confirmed === "true";
@@ -260,7 +270,7 @@
     } else {
       submitBtn.disabled = true;
       submitBtn.textContent = "Processing…";
-      overlay.hidden = false;
+      showOverlay("Calculating solar…");
       form.submit();
     }
   }
@@ -279,16 +289,21 @@
     addressGateInProgress = true;
     submitBtn.disabled = true;
     submitBtn.textContent = "Checking addresses…";
+    showOverlay("Validating address…");
 
     Promise.all(blocksToCheck.map(validateBlock)).then(function () {
       addressGateInProgress = false;
       submitBtn.disabled = false;
       submitBtn.textContent = "Get estimates";
       if (blocks.every(isConfirmed)) {
+        showOverlay("Calculating solar…");
         submitForReal();
+      } else {
+        // Suggestion boxes are now showing -- wait for the user to resolve
+        // each one and click "Get estimates" again, so the spinner
+        // shouldn't keep running while nothing is happening.
+        hideOverlay();
       }
-      // Otherwise, suggestion boxes are now showing -- wait for the user to
-      // resolve each one and click "Get estimates" again.
     });
   }
 
@@ -302,7 +317,7 @@
       if (addressGatePassed) {
         submitBtn.disabled = true;
         submitBtn.textContent = "Processing…";
-        overlay.hidden = false;
+        showOverlay("Calculating solar…");
         return;
       }
       event.preventDefault();

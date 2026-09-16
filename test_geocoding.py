@@ -193,6 +193,24 @@ def test_opencage_fallback_skipped_once_daily_limit_reached(monkeypatch, tmp_pat
     assert len(client.calls) == 2  # no OpenCage request -- daily cap already spent
 
 
+def _opencage_road_response(lat=7.0, lon=8.0):
+    return {"results": [{"components": {"_type": "road"}, "geometry": {"lat": lat, "lng": lon}, "confidence": 5}]}
+
+
+def test_opencage_low_confidence_guess_used_when_nominatim_finds_nothing(monkeypatch, tmp_path):
+    """Even a non-rooftop OpenCage guess beats surfacing a bare "couldn't
+    confirm" with no suggestion at all, since it still gives the caller
+    something to offer the user as a "did you mean" address."""
+    _configure_opencage(monkeypatch, tmp_path)
+    client = _FakeClient([[], [], _opencage_road_response()])
+
+    result = geocode_address(client, "Nonexistent Street", postal_code="0000")
+
+    assert result["geocode_type"] == "opencage:road"
+    assert result["latitude"] == 7.0
+    assert result["low_confidence_geocode"] is True
+
+
 def test_no_opencage_fallback_when_api_key_unset(monkeypatch, tmp_path):
     monkeypatch.setattr(geocoding, "OPENCAGE_API_KEY", "")
     monkeypatch.setattr(geocoding, "OPENCAGE_CACHE_PATH", tmp_path / "cache.json")

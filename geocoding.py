@@ -260,8 +260,14 @@ def geocode_address(
 
     if nominatim_result["low_confidence_geocode"]:
         opencage_result = _geocode_opencage(client, street_address, city, state_region, postal_code, country)
-        if opencage_result is not None and not opencage_result["low_confidence_geocode"]:
-            return opencage_result
+        if opencage_result is not None:
+            if not opencage_result["low_confidence_geocode"]:
+                return opencage_result
+            # Nominatim found nothing at all -- a low-confidence OpenCage guess
+            # still gives the caller a "did you mean" address to offer, which
+            # beats surfacing a bare "couldn't confirm" with no suggestion.
+            if nominatim_result["latitude"] is None and opencage_result["latitude"] is not None:
+                return opencage_result
 
     return nominatim_result
 
